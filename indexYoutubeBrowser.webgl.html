@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<title>Oculus VR Youtubebrowser by Idrs</title>
+		<style>
+			html, body {
+				width: 100%;
+				height: 100%;
+			}
+
+			body {
+				background-color: #000000;
+				margin: 0;
+				font-family: Arial;
+				overflow: hidden;
+			}
+
+			.search {
+				position: absolute;
+				text-align: center;
+			}
+
+			.search input {
+				color: #ffffff;
+				background-color: transparent;
+				border: 1px solid #0080ff;
+				padding: 10px;
+				font-size: 20px;
+				text-transform: uppercase;
+				-webkit-border-radius: 0px; /* workaround for ios safari */
+				pointer-events: all;
+			}
+
+			.search button {
+				color: #0080ff;
+				background-color: transparent;
+				border: 1px solid #0080ff;
+				padding: 10px;
+				font-size: 20px;
+				text-transform: uppercase;
+				cursor: pointer;
+			}
+			
+			.player {
+			  position: absolute;
+			}
+			
+			#container {
+			  position: absolute;
+			  top: 0;
+			  left: 0;
+			}
+		</style>
+	</head>
+	<body>
+		<script src="js/three/three.min.js"></script>
+		<script src="js/other/tween.min.js"></script>
+		<script src="js/other/jquery-1.10.2.min.js"></script>
+		<script src="js/vr/vr.js"></script>
+		<script src="js/vr/OculusRiftControls.js"></script>
+		<script src="js/vr/OculusRiftEffect.js"></script>
+		
+		<div id="container"></div>
+		<div id="search-left" class="search"><input id="query_left" type="text" value="cats"><button class="button">search</button></div>
+		<div id="search-right" class="search"><input id="query_right" type="text" value="cats"><button class="button">search</button></div>
+		
+		<div class="player" id="player-left"></div>
+		<div class="player" id="player-right"></div>
+		
+		<script>
+			var camera, scene, renderer, projector;
+			var auto = true;
+			var effect; 
+			var objects = [];
+			var lastMousepointerPosition = {};
+			var mousePointer;
+			var controls, time = Date.now();
+			var playerLeft;
+			var playerRight;
+						
+			var windowWidth = 1280;
+			var windowHeight = 800;
+			
+			var Element = function ( entry ) {
+				
+				var geometry = new THREE.PlaneGeometry(480,360);
+				
+				material = new THREE.MeshLambertMaterial({
+					map: THREE.ImageUtils.loadTexture(entry.media$group.media$thumbnail[ 2 ].url)
+				});
+				
+				var element = new THREE.Mesh(geometry, material);
+				element.position.x = Math.random() * 4000-2000 ;
+				element.position.y = 3000;
+				element.position.z = Math.random() * - 5000;
+				
+				
+				element.url = 'http://www.youtube.com/embed/' + entry.id.$t.split( ':' ).pop() + '?rel=0&autoplay=1&controls=1&showinfo=0';
+				
+				new TWEEN.Tween( element.position )
+						.to( { y: Math.random() * 2000 - 1000 }, 2000 )
+						.easing( TWEEN.Easing.Exponential.Out )
+						.start();
+				
+				return element;
+			};
+			
+			function setUi() {
+				var width = windowWidth, hwidth = width/2,
+				  height = windowHeight;
+			
+				var hsize = 0.80, vsize = 0.40 // for 480x360 vids
+				var hsize = 0.50, vsize = 0.20 // for smallsized vids (no sizedefinition in player-iframe
+				var ui = $('#player-left');
+				var hsize=0.50, vsize = 0.40, outOffset=0.2;
+				ui.css('width', hwidth*hsize);
+				ui.css('left', hwidth*(1-hsize+outOffset)/2) ;
+				ui.css('height', height*vsize);
+				ui.css('margin-top', height*(1-vsize)/2);
+
+				ui = $('#player-right');
+				hsize=0.50; vsize = 0.40; outOffset=0.1;
+				ui.css('width', hwidth*hsize);
+				ui.css('right', hwidth*(1-hsize+outOffset)/2) ;
+				ui.css('height', height*vsize);
+				ui.css('margin-top', height*(1-vsize)/2);
+			  
+				var ui = $('#search-left');
+				var hsize=0.60, vsize = 0.20, outOffset=0.2;
+				ui.css('width', hwidth*hsize);
+				ui.css('left', hwidth*(1-hsize+outOffset)/2) ;
+				ui.css('height', height*vsize);
+				ui.css('margin-top', height*(1-vsize)/2);
+
+				ui = $('#search-right');
+				hsize=0.60; vsize = 0.20; outOffset=0.1;
+				ui.css('width', hwidth*hsize);
+				ui.css('right', hwidth*(1-hsize+outOffset)/2) ;
+				ui.css('height', height*vsize);
+				ui.css('margin-top', height*(1-vsize)/2);
+			  
+			  
+
+				$('#query_left').keyup(function(){
+					$('#query_right').val($('#query_left').val());
+				});
+				$('#query_right').keyup(function(){
+					$('#query_left').val($('#query_right').val());
+				});
+			}
+			
+			if (!vr.isInstalled()) {	
+				alert('NPVR plugin not installed!');
+			}
+			vr.load(function(error) {
+				if (error) {
+					alert('Plugin load failed: ' + error.toString());
+				}
+				try {
+					init();
+					setUi();
+					animate();
+				} catch (e) {
+					statusEl.innerText = e.toString();
+					console.log(e);
+				}
+			});
+			
+			function init() {
+				camera = new THREE.PerspectiveCamera( 75, windowWidth / windowHeight, 1, 5000 );
+				scene = new THREE.Scene();
+
+				renderer = new THREE.WebGLRenderer({
+					devicePixelRatio: 1,
+					alpha: false,
+					clearColor: 0xffffff,
+					antialias: true
+				});
+				renderer.setClearColorHex( 0x000000, 1 );
+				renderer.setSize(windowWidth, windowHeight );
+				effect = new THREE.OculusRiftEffect( renderer);
+				  
+				document.getElementById('container').appendChild(renderer.domElement);
+				
+				var ambientLight = new THREE.AmbientLight(0xffffff);
+				scene.add(ambientLight);
+				
+				var query = document.getElementById( 'query_left' );
+				query.addEventListener( 'keyup', function ( event ) {
+					search( query.value );
+				}, false );
+				
+				var query = document.getElementById( 'query_right' );
+				query.addEventListener( 'keyup', function ( event ) {
+					search( query.value );
+				}, false );
+			
+				if ( window.location.hash.length > 0 ) {
+					query.value = window.location.hash.substr( 1 );
+				}
+				
+				projector = new THREE.Projector();
+				
+				controls = new THREE.OculusRiftControls( camera );
+				var controlsObject = controls.getObject() ;
+				
+				var geometry = new THREE.PlaneGeometry(0.04,0.04); // 0.06 = wie mauscursor
+				var material = new THREE.MeshBasicMaterial({color: 0xCC0000});
+				mousePointer = new THREE.Mesh(geometry, material);
+				mousePointer.position.x = controlsObject.position.x;
+				mousePointer.position.y = controlsObject.position.y;
+				mousePointer.position.z = -3.0;
+				controlsObject.add(mousePointer);
+				scene.add( controlsObject);
+				search( query.value );
+				
+				document.body.addEventListener( 'mousemove', onMouseMove, false);
+				document.body.addEventListener( 'mousedown', onDocumentMouseDown, false );
+				document.body.addEventListener( 'mousewheel', onMouseWheel, false );
+			}
+			
+			function search( query ) {
+				window.location.hash = query;
+
+				for ( var i = 0, l = objects.length; i < l; i ++ ) {
+
+					( function () {
+
+						var object = objects[ i ];
+						var delay = Math.random() * 100;
+						
+						new TWEEN.Tween( object.position )
+							.to( { y: - 2000 }, 1000 )
+							.delay( delay )
+							.easing( TWEEN.Easing.Exponential.In )
+							.onComplete( function () {
+								scene.remove( object );
+							} )
+							.start();
+					} )();
+				}
+				
+				objects = new Array();
+				
+				var request = new XMLHttpRequest();
+				request.addEventListener( 'load', onData, false );
+				request.open( 'GET', 'https://gdata.youtube.com/feeds/api/videos?v=2&alt=json&max-results=50&q=' + query, true );
+				request.send( null );
+			}
+			
+			function onData( event ) {
+				var data = JSON.parse( event.target.responseText );
+				var entries = data.feed.entry;
+
+				for ( var i = 0; i < entries.length; i ++ ) {
+
+					var object = new Element( entries[ i ] );
+					
+					scene.add( object );
+					objects.push( object );	
+				}
+			}
+			
+			function move( delta ) {
+				for ( var i = 0; i < objects.length; i ++ ) {
+
+					var object = objects[ i ];
+					object.position.z += delta;
+
+					if ( object.position.z > 0 ) {
+						object.position.z -= 5000;
+					} else if ( object.position.z < - 5000 ) {
+						object.position.z += 5000;
+					}
+				}
+			}
+			
+			function onMouseWheel( event ) {
+				move( event.wheelDelta );
+			}
+			
+			function onMouseMove( event ){
+					//check to make sure there is data to compare against
+					if (typeof(lastMousepointerPosition.x) != 'undefined') {
+						//get the change from last position to this position
+						var deltaX = lastMousepointerPosition.x - event.clientX,
+						deltaY = lastMousepointerPosition.y - event.clientY;
+						moveMousepointer(deltaX, deltaY);
+					}
+
+					//set the new last position to the current for next time
+					lastMousepointerPosition = {
+						x : event.clientX,
+						y : event.clientY
+					};
+			}
+			
+			function moveMousepointer(deltaX, deltaY)
+			{
+				// calculating coordinates in 3d-world
+				var vFOV = camera.fov * Math.PI / 180;        // convert vertical fov to radians
+				var height = 2 * Math.tan( vFOV / 2 )  * 1;     // visible height, y; 1 = distance of object from camera
+
+				var aspect = windowWidth / windowHeight;
+				var width = height * aspect;  						// visible width, x
+				
+				// calculation ratio between 3d-world coordinates to window coordiates
+				var ratioX = width / windowWidth;
+				var ratioY = height / windowHeight;
+				
+				mousePointer.position.x -= deltaX * ratioX;
+				mousePointer.position.y += deltaY * ratioY;
+			}
+			
+			var vrstate = new vr.State();
+			
+			function animate() {
+				vr.requestAnimationFrame( animate );
+				
+				TWEEN.update();
+				
+				if ( auto === true ) {
+					move( 1 );
+				}
+				
+				
+				var polled = vr.pollState(vrstate);
+				controls.update( Date.now() - time );
+				effect.render( scene, camera, polled ? vrstate : null  );
+				time = Date.now();
+			}
+			
+			function onDocumentMouseDown( event ) {
+				
+				var controlObj = controls.getObject();
+				var vector = new THREE.Vector3(mousePointer.position.x , mousePointer.position.y, 0.5 );
+				
+				var raycaster = new THREE.Raycaster( vector, new THREE.Vector3(mousePointer.position.x,mousePointer.position.y,-1).normalize() );
+				
+				var intersects = raycaster.intersectObjects( objects );
+
+				if ( intersects.length > 0 ) {
+					auto = false;
+			
+					if ( playerLeft !== undefined ) {
+
+						playerLeft.parentNode.removeChild( playerLeft );
+						playerLeft = undefined;
+
+					}
+					if ( playerRight !== undefined ) {
+
+						playerRight.parentNode.removeChild( playerRight );
+						playerRight = undefined;
+
+					}
+					
+					$('#query_left').hide();
+					$('#query_right').hide();
+					var object = intersects[ 0 ].object;
+					playerLeft = document.createElement( 'iframe' );
+					playerLeft.src = object.url;
+					
+					playerRight = document.createElement( 'iframe' );
+					playerRight.src = object.url;
+					
+					document.getElementById('player-left').appendChild(playerLeft);
+					document.getElementById('player-right').appendChild(playerRight);
+			
+					var object = intersects[ 0 ].object;
+					var prev = object.position.z + 400;
+					
+					new TWEEN.Tween( controlObj.position )
+						.to( { x: object.position.x, y: object.position.y  }, 1500 )
+						.onUpdate(function(){
+							
+						})
+						.easing( TWEEN.Easing.Exponential.Out )
+						.start();
+					
+					new TWEEN.Tween( { value: prev } )
+						.to( { value: 0  }, 2000 )
+						.onUpdate( function () {
+
+							move( this.value - prev );   
+							prev = this.value;
+
+						} )
+						.easing( TWEEN.Easing.Exponential.Out )
+						.start();
+				}
+				else
+				{
+					if ( playerLeft !== undefined ) {
+
+						playerLeft.parentNode.removeChild( playerLeft );
+						playerLeft = undefined;
+
+					}
+					if ( playerRight !== undefined ) {
+
+						playerRight.parentNode.removeChild( playerRight );
+						playerRight = undefined;
+
+					}
+					$('#query_left').show();
+					$('#query_right').show();
+					auto = true;
+				}
+			}
+	 
+		</script>
+	</body>
+</html>

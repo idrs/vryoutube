@@ -11,3 +11,7 @@ Link: vr.js – npvr plugin
 - Activate the plugin
 - Start the chrome.exe with –args –disable-web-security
 (Otherwise you would only see a black screen with 2 red dots. The Cross-Origin Resource Sharing policy stops the javascript code to get data from youtube.com)
+
+Start
+=====
+Open indexYoutubeBrowser.webgl.html

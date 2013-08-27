@@ -15,3 +15,10 @@ Link: vr.js – npvr plugin
 Start
 =====
 Open indexYoutubeBrowser.webgl.html
+
+Issues
+======
+- Youtube videos are not synchronized, this causes ghosting effects
+- Youtube videos can not be paused etc. 
+- The mouse doesn't work right
+- ...
